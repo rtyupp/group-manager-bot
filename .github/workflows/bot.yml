@@ -1,0 +1,60 @@
+name: Group Manager Bot
+
+# تشغيل بوت إدارة المجموعات 24/7 مجاناً عبر GitHub Actions (مستودع عام = دقائق غير محدودة، بدون بطاقة).
+# كل دورة تعمل 5س45م ثم تُعاد تلقائياً كل 6 ساعات → تغطية ~96%.
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "مدة التشغيل بالدقائق"
+        required: false
+        default: "345"
+
+# يمنع تشغيل نسختين معاً (تعارض getUpdates مع تيليجرام)
+concurrency:
+  group: telegram-group-bot
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: تثبيت الاعتماديات
+        run: pip install -r requirements.txt
+
+      - name: تشغيل البوت (polling)
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          MIN="${{ github.event.inputs.minutes }}"
+          MIN="${MIN:-345}"
+          echo "▶ سيعمل البوت لمدة $MIN دقيقة"
+          timeout --signal=INT "${MIN}m" python bot.py || true
+          echo "■ انتهت الدورة"
+
+      - name: حفظ الإعدادات والتحذيرات
+        if: always()
+        run: |
+          git config user.name  "bot-state"
+          git config user.email "bot-state@users.noreply.github.com"
+          git add -f settings.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "لا تغييرات في الحالة"
+          else
+            git commit -m "state: حفظ الإعدادات"
+            git push
+          fi

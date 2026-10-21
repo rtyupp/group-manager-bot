@@ -39,9 +39,9 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           PYTHONUNBUFFERED: "1"
+          RUN_MINUTES: ${{ github.event.inputs.minutes }}
         run: |
-          MIN="${{ github.event.inputs.minutes }}"
-          MIN="${MIN:-345}"
+          MIN="${RUN_MINUTES:-345}"
           echo "▶ سيعمل البوت لمدة $MIN دقيقة"
           timeout --signal=INT "${MIN}m" python bot.py || true
           echo "■ انتهت الدورة"
@@ -56,5 +56,6 @@ jobs:
             echo "لا تغييرات في الحالة"
           else
             git commit -m "state: حفظ الإعدادات"
+            git pull --rebase -X ours origin main || true
             git push
           fi

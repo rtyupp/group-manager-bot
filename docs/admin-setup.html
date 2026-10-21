@@ -1,0 +1,56 @@
+<!doctype html>
+<html dir="rtl" lang="ar">
+<head><meta charset="utf-8">
+<style>
+  body{margin:0;padding:8px 4px;background:transparent;color:#000;font-family:-apple-system,'Segoe UI',Tahoma,sans-serif}
+  .wrap{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+  .phone{width:340px;background:#fff;border:1px solid #d9dde3;border-radius:18px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.14)}
+  .bar{background:#3390ec;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 14px}
+  .bar .title{font-size:16px;font-weight:700}
+  .save{width:26px;height:26px;border-radius:50%;background:#4cd964;color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700}
+  .member{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:8px solid #f2f3f5}
+  .avatar{width:42px;height:42px;border-radius:50%;background:#3390ec;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex:none}
+  .member .n{font-size:15px;font-weight:600}
+  .member .u{font-size:12.5px;color:#8e8e93}
+  .sect{padding:8px 14px 3px;font-size:12px;color:#8e8e93;font-weight:600}
+  .row{display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid #eceef0}
+  .row .lbl{flex:1;font-size:14.5px}
+  .sw{width:40px;height:24px;border-radius:12px;background:#c7ccd1;position:relative;flex:none}
+  .sw.on{background:#3390ec}
+  .sw i{position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+  .sw.on i{right:auto;left:2px}
+  .tag{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:99px;flex:none}
+  .req{background:#e6f7ed;color:#177a45}
+  .opt{background:#fff4d6;color:#8a6100}
+  .nah{background:#f0f1f4;color:#8e8e93}
+  .hint{font-size:13px;color:#333;max-width:370px;line-height:1.8;background:#f2f3f5;border-radius:10px;padding:9px 12px}
+  .hint b{color:#177a45}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="phone">
+    <div class="bar">
+      <span style="width:26px"></span>
+      <span class="title">إضافة مسؤول</span>
+      <span class="save">✓</span>
+    </div>
+    <div class="member">
+      <div class="avatar">ل</div>
+      <div><div class="n">لهايم الدجى</div><div class="u">@LhYmAldogabot &middot; بوت</div></div>
+    </div>
+    <div class="sect">الصلاحيات</div>
+    <div class="row"><span class="lbl">حذف الرسائل</span><span class="tag req">مطلوب ✅</span><span class="sw on"><i></i></span></div>
+    <div class="row"><span class="lbl">حظر الأعضاء</span><span class="tag req">مطلوب ✅</span><span class="sw on"><i></i></span></div>
+    <div class="row"><span class="lbl">تثبيت الرسائل</span><span class="tag opt">اختياري 💡</span><span class="sw on"><i></i></span></div>
+    <div class="row"><span class="lbl">دعوة الأعضاء عبر الرابط</span><span class="tag nah">مو مهم</span><span class="sw"><i></i></span></div>
+    <div class="row"><span class="lbl">إدارة مكالمات الفيديو</span><span class="tag nah">مو مهم</span><span class="sw"><i></i></span></div>
+    <div class="row"><span class="lbl">تغيير معلومات المجموعة</span><span class="tag nah">مو مهم</span><span class="sw"><i></i></span></div>
+  </div>
+  <div class="hint">
+    المطلوب منك: فعّل الزرّين المعلَّمين <b>«مطلوب»</b> — و«تثبيت الرسائل» لو تبي أمر /تثبيت.
+    الباقي خلّه على حاله، وبعدين اضغط <b>✓ أعلى الشاشة</b> 👍<br>
+    ولو لقيت كل المفاتيح مفعّلة من قبل — اضغط ✓ وخلاص.
+  </div>
+</div>
+</body>
+</html>

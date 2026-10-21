@@ -9,6 +9,7 @@ import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
+from html import escape as _h
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -25,7 +26,7 @@ from aiogram.types import (
 
 # ── إعدادات ──
 TOKEN = os.environ.get("BOT_TOKEN", "")
-STATE_FILE = os.environ.get("STATE_FILE", "settings.json")
+STATE_FILE = os.environ.get("STATE_FILE", os.path.join(os.path.dirname(__file__), "settings.json"))
 WARN_LIMIT = int(os.environ.get("WARN_LIMIT", "3"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -52,9 +53,11 @@ def load_state() -> None:
 
 
 def save_state() -> None:
+    tmp = STATE_FILE + ".tmp"
     try:
-        with open(STATE_FILE, "w", encoding="utf-8") as f:
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, STATE_FILE)
     except Exception:  # noqa: BLE001
         log.exception("فشل حفظ الحالة")
 
@@ -80,13 +83,31 @@ def open_permissions() -> ChatPermissions:
     )
 
 
+def muted_permissions() -> ChatPermissions:
+    """لكتم عضو: كل شيء مغلق."""
+    return ChatPermissions(
+        can_send_messages=False, can_send_audios=False, can_send_documents=False,
+        can_send_photos=False, can_send_videos=False, can_send_video_notes=False,
+        can_send_voice_notes=False, can_send_polls=False, can_send_other_messages=False,
+        can_add_web_page_previews=False, can_invite_users=False,
+    )
+
+
 def closed_permissions() -> ChatPermissions:
-    return ChatPermissions(can_send_messages=False)
+    """لقفل المجموعة: يتوقف الإرسال ويبقى حق الدعوة متاحاً."""
+    return ChatPermissions(
+        can_send_messages=False, can_send_audios=False, can_send_documents=False,
+        can_send_photos=False, can_send_videos=False, can_send_video_notes=False,
+        can_send_voice_notes=False, can_send_polls=False, can_send_other_messages=False,
+        can_add_web_page_previews=False, can_invite_users=True,
+    )
 
 
 def fmt_name(user) -> str:
-    name = (user.first_name or "")[:30] if user else "عضو"
-    return f'<a href="tg://user?id={user.id}">{name}</a>' if user else "عضو"
+    if not user:
+        return "عضو"
+    name = _h((user.first_name or "")[:30])
+    return f'<a href="tg://user?id={user.id}">{name}</a>'
 
 
 async def is_admin(chat_id: int, user_id: int) -> bool:
@@ -99,13 +120,22 @@ async def is_admin(chat_id: int, user_id: int) -> bool:
         return False
 
 
-def parse_duration(text: str | None) -> timedelta:
-    """المدة بصيغة: 30m / 2h / 1d — الافتراضي ساعة."""
+async def _is_admin_msg(m: Message) -> bool:
+    """مشرف حقيقي أو مشرف مجهول (sender_chat = المجموعة نفسها)."""
+    if m.sender_chat and m.sender_chat.id == m.chat.id:
+        return True
+    return await is_admin(m.chat.id, m.from_user.id)
+
+
+def parse_duration(text: str | None) -> timedelta | None:
+    """المدة بصيغة: 30m / 2h / 1d — None لو غير صالحة. الحد الأقصى 366 يوم."""
     if text:
         m = re.fullmatch(r"(\d+)\s*([mhd]?)", text.strip().lower())
         if m:
-            n = int(m.group(1))
-            return timedelta(minutes=n * {"m": 1, "h": 60, "d": 1440}.get(m.group(2) or "m", 1))
+            n = int(m.group(1)) * {"m": 1, "h": 60, "d": 1440}.get(m.group(2) or "m", 1)
+            if n <= 0:
+                return None
+            return timedelta(minutes=min(n, 366 * 1440))
     return timedelta(hours=1)
 
 
@@ -123,7 +153,7 @@ def reply_target(m: Message):
 def welcome_text(cfg_chat: dict, name_html: str, chat_title: str) -> str:
     tpl = cfg_chat.get("welcome") or "أهلاً {name} 👋 نورت {chat} 🌟"
     try:
-        return tpl.format(name=name_html, chat=chat_title)
+        return tpl.format(name=name_html, chat=_h(chat_title))
     except Exception:  # noqa: BLE001
         return tpl
 
@@ -136,6 +166,10 @@ async def send_welcome(m_or_u, chat, user) -> None:
     if now - _recent_welcome.get(key, 0) < 60:
         return  # رحّبنا له للتو (تحديث مزدوج)
     _recent_welcome[key] = now
+    if len(_recent_welcome) > 500:  # تنظيف دوري يمنع تضخم القاموس في الدورة
+        cutoff = now - 600
+        for k2 in [k2 for k2, t2 in _recent_welcome.items() if t2 < cutoff]:
+            _recent_welcome.pop(k2, None)
     try:
         await bot.send_message(chat.id, welcome_text(cfg(chat.id), fmt_name(user), chat.title or "المجموعة"))
     except Exception:  # noqa: BLE001
@@ -144,16 +178,16 @@ async def send_welcome(m_or_u, chat, user) -> None:
 
 @router.message(F.new_chat_members)
 async def on_added(m: Message) -> None:
-    # إذا أُضيف البوت نفسه → تعريف سريع
+    # رحّب بباقي الأعضاء أولاً (حتى لو أُضيف البوت معهم)
+    for u in m.new_chat_members:
+        if not (bot and u.id == bot.id):
+            await send_welcome(m, m.chat, u)
     if bot and any(u.id == bot.id for u in m.new_chat_members):
         await m.answer(
             "👋 أهلاً! أنا بوت إدارة المجموعة.\n"
             "خطوة واحدة باقية: اجعلني <b>مشرفاً</b> بصلاحيات (حذف الرسائل، حظر الأعضاء، دعوة الأعضاء، تثبيت الرسائل).\n\n"
             "اكتب /مساعدة لعرض الأوامر."
         )
-        return
-    for u in m.new_chat_members:
-        await send_welcome(m, m.chat, u)
 
 
 @router.chat_member()
@@ -168,19 +202,18 @@ async def on_member_updated(event: ChatMemberUpdated) -> None:
 # ── الحماية: ضد الروابط ──
 @router.message(F.text.regexp(LINK_RE))
 async def antilink(m: Message) -> None:
-    if not bot or m.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+    # المسارات غير المطبِّقة تُمرَّر لموجّه الأوامر — رسالة فيها رابط ما تبتلع أوامر
+    if (bot and m.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP)
+            and cfg(m.chat.id).get("antilink") and not await _is_admin_msg(m)):
+        try:
+            await m.delete()
+            await m.answer(f"🚫 ممنوع نشر الروابط هنا يا {fmt_name(m.from_user)}")
+        except TelegramForbiddenError:
+            log.warning("البوت طُرد من المجموعة %s", m.chat.id)
+        except Exception:  # noqa: BLE001
+            log.exception("فشل حذف رسالة رابط")
         return
-    if not cfg(m.chat.id).get("antilink"):
-        return
-    if await is_admin(m.chat.id, m.from_user.id):
-        return
-    try:
-        await m.delete()
-        await m.answer(f"🚫 ممنوع نشر الروابط هنا يا {fmt_name(m.from_user)}")
-    except TelegramForbiddenError:
-        log.warning("البوت طُرد من المجموعة %s", m.chat.id)
-    except Exception:  # noqa: BLE001
-        log.exception("فشل حذف رسالة رابط")
+    await dispatcher(m)
 
 
 # ── الأوامر ──
@@ -216,8 +249,8 @@ async def cmd_help(m: Message, args: str) -> None:
 
 
 async def cmd_rules(m: Message, args: str) -> None:
-    text = cfg(m.chat.id).get("rules")
-    await m.answer(f"📜 <b>قواعد المجموعة</b>\n\n{text}" if text else "ما فيه قواعد مسجّلة بعد. المشرف يقدر يضيفها بـ /وضع_قواعد")
+    raw = cfg(m.chat.id).get("rules")
+    await m.answer(f"📜 <b>قواعد المجموعة</b>\n\n{_h(raw)}" if raw else "ما فيه قواعد مسجّلة بعد. المشرف يقدر يضيفها بـ /وضع_قواعد")
 
 
 async def cmd_setrules(m: Message, args: str) -> None:
@@ -273,11 +306,15 @@ async def cmd_ban(m: Message, args: str) -> None:
 
 async def cmd_unban(m: Message, args: str) -> None:
     t = reply_target(m)
-    if not t:
-        await m.answer("استخدم الأمر بالرد على رسالة العضو")
+    if t:
+        uid, who = t.id, fmt_name(t)
+    elif args.strip().lstrip("-").isdigit():
+        uid, who = int(args.strip()), f"<code>{args.strip()}</code>"
+    else:
+        await m.answer("استخدم الأمر بالرد على رسالة العضو أو بآيدي: /الغاء_حظر 123456789")
         return
-    await bot.unban_chat_member(m.chat.id, t.id, only_if_banned=True)
-    await m.answer(f"✅ تم رفع الحظر عن {fmt_name(t)}")
+    await bot.unban_chat_member(m.chat.id, uid, only_if_banned=True)
+    await m.answer(f"✅ تم رفع الحظر عن {who}")
 
 
 async def cmd_kick(m: Message, args: str) -> None:
@@ -291,9 +328,13 @@ async def cmd_kick(m: Message, args: str) -> None:
 async def cmd_mute(m: Message, args: str) -> None:
     t = await _guard_target(m)
     if t:
-        until = datetime.now(timezone.utc) + parse_duration(args)
-        await bot.restrict_chat_member(m.chat.id, t.id, permissions=closed_permissions(), until_date=until)
-        await m.answer(f"🔇 تم كتم {fmt_name(t)} لمدة {args or '60m'}")
+        dur = parse_duration(args)
+        if dur is None:
+            await m.answer("الاستخدام: /كتم 30m — (m دقيقة، h ساعة، d يوم، بحد أقصى 366d)")
+            return
+        until = datetime.now(timezone.utc) + dur
+        await bot.restrict_chat_member(m.chat.id, t.id, permissions=muted_permissions(), until_date=until)
+        await m.answer(f"🔇 تم كتم {fmt_name(t)} لمدة {int(dur.total_seconds() // 60)} دقيقة")
 
 
 async def cmd_unmute(m: Message, args: str) -> None:
@@ -355,10 +396,18 @@ async def cmd_del(m: Message, args: str) -> None:
 
 
 async def cmd_antilink(m: Message, args: str) -> None:
-    val = args.strip().lower() in ("on", "تشغيل", "1", "yes")
-    cfg(m.chat.id)["antilink"] = val
-    save_state()
-    await m.answer("🛡 الحماية من الروابط: مفعّلة" if val else "🛡 الحماية من الروابط: موقّفة")
+    val = args.strip().lower()
+    if val in ("on", "تشغيل", "تفعيل", "1", "yes"):
+        cfg(m.chat.id)["antilink"] = True
+        save_state()
+        await m.answer("🛡 الحماية من الروابط: مفعّلة")
+    elif val in ("off", "إيقاف", "تعطيل", "0", "no"):
+        cfg(m.chat.id)["antilink"] = False
+        save_state()
+        await m.answer("🛡 الحماية من الروابط: موقّفة")
+    else:
+        now_state = "مفعّلة" if cfg(m.chat.id).get("antilink") else "موقّفة"
+        await m.answer(f"🛡 الحماية من الروابط الآن: {now_state}\nالاستخدام: /ضد_روابط on أو off")
 
 
 async def cmd_adminlist(m: Message, args: str) -> None:
@@ -419,12 +468,13 @@ async def dispatcher(m: Message) -> None:
     token = m.text.split()[0].lstrip("/").split("@")[0].lower()
     handler = COMMANDS.get(token)
     if not handler:
-        await m.answer("أمر غير معروف 🤔 جرّب /مساعدة")
-        return
+        if m.chat.type == ChatType.PRIVATE:
+            await m.answer("أمر غير معروف 🤔 جرّب /مساعدة")
+        return  # بالمجموعات: صمت لتجنّب الإزعاج
     if m.chat.type == ChatType.PRIVATE and token in ADMIN_CMDS:
         await m.answer("هذا الأمر يشتغل داخل المجموعة فقط — أضفني إلى مجموعتك 👋")
         return
-    if token in ADMIN_CMDS and not await is_admin(m.chat.id, m.from_user.id):
+    if token in ADMIN_CMDS and not await _is_admin_msg(m):
         await m.answer("🚫 هذا الأمر للمشرفين فقط")
         return
     args = m.text.split(maxsplit=1)[1] if len(m.text.split(maxsplit=1)) > 1 else ""
